@@ -5,7 +5,7 @@ CONFIG=vangen.json
 BUILD_DIR=build
 
 $(VANGEN):
-	go get 4d63.com/vangen
+	go install 4d63.com/vangen
 
 $(CONFIG):
 	go run cmd/gen/*.go --domain "go.enc.dev" --vcs "github.com/eculver" --match '^go\-'> $@
