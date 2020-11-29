@@ -1,0 +1,20 @@
+{
+	"domain": "go.enc.dev",
+	"index": false,
+	"repositories": [
+		{
+			"prefix": "circleci",
+			"subs": null,
+			"url": "https://github.com/eculver/go-circleci",
+			"main": false,
+			"source": {
+				"home": "https://github.com/eculver/go-circleci",
+				"dir": "https://github.com/eculver/go-circleci/tree/master/{/dir}",
+				"file": "https://github.com/eculver/go-circleci/blob/master{/dir}/{file}#L{line}"
+			},
+			"website": {
+				"url": "https://github.com/eculver/go-circleci"
+			}
+		}
+	]
+}
