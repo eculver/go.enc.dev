@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css" />
+    </head>
+    <body>
+        <div class="container">
+            <div class="row">
+                <table class="u-full-width">
+                    <thead>
+                        <tr>
+                            <th>Package</th>
+                            <th>Source</th>
+                            <th>Documentation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Repositories}}
+                        <tr>
+                            <td>{{$.Domain}}/{{.Prefix}}</td>
+                            <td>
+                                <a href="{{ .Website.URL }}">{{ .Website.Name }}</a>
+                            </td>
+                            <td>
+                                <a href="https://pkg.go.dev/{{$.Domain}}/{{.Prefix}}">
+                                    <img src="https://img.shields.io/badge/godoc-reference-blue?style=for-the-badge" alt="GoDoc" />
+                                </a>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+</html>

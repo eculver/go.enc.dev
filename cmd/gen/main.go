@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/google/go-github/github"
 	"github.com/segmentio/cli"
@@ -19,9 +20,11 @@ const (
 )
 
 type config struct {
-	Domain string `flag:"--domain" help:"Domain where content will be hosted"`
-	VCS    string `flag:"--vcs" help:"Base VCS URL where the code lives, eg. github.com/eculver"`
-	Match  string `flag:"--match" help:"Regular expression to be used for matching repository names" default:""`
+	Domain      string `flag:"-d,--domain" help:"Domain where content will be hosted"`
+	VCS         string `flag:"-v,--vcs" help:"Base VCS URL where the code lives, eg. github.com/eculver"`
+	Match       string `flag:"-m,--match" help:"Regular expression to be used for matching repository names" default:""`
+	TemplateDir string `flag:"-t,--template-dir" help:"Path to directory holding templates" default:"."`
+	OutputDir   string `flag:"-o,--output-dir" help:"Path to directory where html will be written" default:"./build"`
 }
 
 func main() {
@@ -42,6 +45,8 @@ func main() {
 		if conf.Match != "" {
 			matcherFunc = matchRegexp(conf.Match)
 		}
+		indexTmpl := template.Must(template.ParseFiles(filepath.Join(conf.TemplateDir, "index.html.tmpl")))
+		packageTmpl := template.Must(template.ParseFiles(filepath.Join(conf.TemplateDir, "package.html.tmpl")))
 
 		var reader RepositoryReader
 		if len(repoDirs) > 0 {
@@ -66,11 +71,85 @@ func main() {
 		if err := reader.Read(h.Repositories); err != nil {
 			log.Fatal(err)
 		}
-		bs, err := json.MarshalIndent(h, "", "\t")
-		if err != nil {
-			log.Fatal(err)
+
+		// create the output directory if it doesn't exist
+		if _, err := os.Stat(conf.OutputDir); os.IsNotExist(err) {
+			if err := os.MkdirAll(conf.OutputDir, os.ModePerm); err != nil {
+				log.Fatalf("Could not create %s: %s", conf.OutputDir, err)
+			}
 		}
-		fmt.Println(string(bs))
+
+		// generate index page
+		indexPath := filepath.Join(conf.OutputDir, "index.html")
+		indexFile, err := os.Create(indexPath)
+		if err != nil {
+			log.Fatalf("Could not create %s: %s", indexPath, err)
+		}
+		defer func() {
+			err := indexFile.Close()
+			if err != nil {
+				log.Fatalf("Could not close %s: %s", indexPath, err)
+			}
+		}()
+		indexTmpl.Execute(indexFile, h)
+		if err := indexFile.Sync(); err != nil {
+			log.Fatalf("Could not write %s: %s", indexPath, err)
+		}
+
+		// generate package pages
+		for _, repo := range *h.Repositories {
+			packageDir := filepath.Join(conf.OutputDir, repo.Prefix)
+			if _, err := os.Stat(packageDir); os.IsNotExist(err) {
+				if err := os.MkdirAll(packageDir, os.ModePerm); err != nil {
+					log.Fatalf("Could not create %s: %s", packageDir, err)
+				}
+			}
+			packagePath := filepath.Join(packageDir, "index.html")
+			packageFile, err := os.Create(packagePath)
+			if err != nil {
+				log.Fatalf("Could not create %s: %s", packagePath, err)
+			}
+			defer func() {
+				err := packageFile.Close()
+				if err != nil {
+					log.Fatalf("Could not close %s: %s", packagePath, err)
+				}
+			}()
+
+			tmplCtx := struct {
+				Package       string
+				Type          string
+				Home          website
+				Documentation website
+				Source        sourceURLs
+				Subs          []sub
+			}{
+				Package: fmt.Sprintf("%s/%s", conf.Domain, repo.Prefix),
+				// TODO: detect this
+				Type: "git",
+				Home: website{
+					Name: repo.Website.Name,
+					URL:  repo.Website.URL,
+				},
+				Documentation: website{
+					Name: fmt.Sprintf("pkg.go.dev/%s/%s", conf.Domain, repo.Prefix),
+					URL:  fmt.Sprintf("https://pkg.go.dev/%s/%s", conf.Domain, repo.Prefix),
+				},
+				Source: repo.SourceURLs,
+				Subs:   repo.Subs,
+			}
+			packageTmpl.Execute(packageFile, tmplCtx)
+			if err := packageFile.Sync(); err != nil {
+				log.Fatalf("Could not write %s: %s", packagePath, err)
+			}
+			// TODO: write file for each sub-package
+		}
+
+		// bs, err := json.MarshalIndent(h, "", "\t")
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// fmt.Println(string(bs))
 	}))
 }
 
@@ -126,14 +205,18 @@ func (r *localReader) Read(repos *repositories) error {
 		}
 
 		// TODO: this should be based on local VCS config in .git/config
+		webName := fmt.Sprintf("%s/%s", r.vcs, fi.Name())
 		homeURL := fmt.Sprintf("https://%s/%s", r.vcs, fi.Name())
 		dirURL := fmt.Sprintf("%s/tree/master/{/dir}", homeURL)
 		fileURL := fmt.Sprintf("%s/blob/master{/dir}/{file}#L{line}", homeURL)
 
 		repo := repository{
-			Prefix:  r.GetPrefix(fi.Name()),
-			URL:     homeURL,
-			Website: website{URL: homeURL},
+			Prefix: r.GetPrefix(fi.Name()),
+			URL:    homeURL,
+			Website: website{
+				Name: webName,
+				URL:  homeURL,
+			},
 			SourceURLs: sourceURLs{
 				Home: homeURL,
 				Dir:  dirURL,
@@ -192,20 +275,22 @@ func (r *githubReader) Read(repos *repositories) error {
 		if err != nil {
 			return err
 		}
-
 		for _, ghrepo := range ghrepos {
 			log.Printf("found repo: %s", *ghrepo.Name)
 			if !r.matcherFunc(*ghrepo.Name) {
 				continue
 			}
-			log.Printf("found match: %s", *ghrepo.Name)
+			webName := fmt.Sprintf("github.com/%s", *ghrepo.Name)
 			homeURL := *ghrepo.HTMLURL
 			dirURL := fmt.Sprintf("%s/tree/master/{/dir}", homeURL)
 			fileURL := fmt.Sprintf("%s/blob/master{/dir}/{file}#L{line}", homeURL)
 			repo := repository{
-				Prefix:  r.GetPrefix(*ghrepo.Name),
-				URL:     homeURL,
-				Website: website{URL: homeURL},
+				Prefix: r.GetPrefix(*ghrepo.Name),
+				URL:    homeURL,
+				Website: website{
+					Name: webName,
+					URL:  homeURL,
+				},
 				SourceURLs: sourceURLs{
 					Home: homeURL,
 					Dir:  dirURL,
@@ -214,11 +299,13 @@ func (r *githubReader) Read(repos *repositories) error {
 			}
 			repos.append(repo)
 		}
-		if resp.LastPage == opts.Page {
+		// when there is only one page the pagination values will be zero values
+		if resp.LastPage == 0 || opts.Page == resp.LastPage {
 			break
 		}
 		opts.Page = resp.NextPage
 	}
+	log.Printf("got %d repos", len(*repos))
 	return nil
 }
 

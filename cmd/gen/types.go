@@ -9,6 +9,7 @@ type host struct {
 }
 
 type repository struct {
+	Name       string     `json:"json"`
 	Prefix     string     `json:"prefix"`
 	Subs       []sub      `json:"subs"`
 	URL        string     `json:"url"`
@@ -30,7 +31,8 @@ type sourceURLs struct {
 }
 
 type website struct {
-	URL string `json:"url"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 type sub struct {

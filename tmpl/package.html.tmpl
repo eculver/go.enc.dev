@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>{{.Package}}</title>
+        <meta name="go-import" content="{{.Package}} {{.Type}} {{.Home.URL}}">
+        <meta name="go-source" content="{{.Package}} {{.Source.Home}} {{.Source.Dir}} {{.Source.File}}">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/skeleton/2.0.4/skeleton.min.css" />
+        <style>
+            code { display: block; font-family: monospace; font-size: 1em; background-color: #d5d5d5; padding: 1em; margin-bottom: 16px; }
+            ul { margin-top: 16px; margin-bottom: 16px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>{{.Package}}</h2>
+            <code>go get {{.Package}}</code>
+            <code>import "{{.Package}}"</code>
+            Source: <a href="{{.Home.URL}}">{{.Home.Name}}</a><br/>
+            Documentation: <a href="{{.Documentation.URL}}">{{.Documentation.Name}}</a><br/>
+            {{if .Subs -}}Sub-packages:<ul>{{end -}}
+            {{range $_, $s := .Subs -}}
+            {{if not $s.Hidden -}}
+                <li><a href="/{{$.Package}}/{{$s.Name}}">{{$.Package}}/{{$s.Name}}</a></li>
+            {{end -}}
+            {{end -}}
+            {{if .Subs -}}</ul>{{end -}}
+        </div>
+    </body>
+</html>
