@@ -179,33 +179,45 @@ func NewGitHubReader(token, org string, matcherFunc RepositoryMatcher) *githubRe
 // TODO: discover subpackages
 func (r *githubReader) Read(repos *repositories) error {
 	opts := &github.RepositoryListOptions{
+		ListOptions: github.ListOptions{
+			Page:    1,
+			PerPage: 100,
+		},
 		Visibility: "public",
 	}
 
 	// list all repositories for the authenticated user
-	ghrepos, _, err := r.client.Repositories.List(context.Background(), r.org, opts)
-	if err != nil {
-		return err
-	}
+	for {
+		ghrepos, resp, err := r.client.Repositories.List(context.Background(), r.org, opts)
+		if err != nil {
+			return err
+		}
 
-	for _, ghrepo := range ghrepos {
-		if !r.matcherFunc(*ghrepo.Name) {
-			continue
+		for _, ghrepo := range ghrepos {
+			log.Printf("found repo: %s", *ghrepo.Name)
+			if !r.matcherFunc(*ghrepo.Name) {
+				continue
+			}
+			log.Printf("found match: %s", *ghrepo.Name)
+			homeURL := *ghrepo.HTMLURL
+			dirURL := fmt.Sprintf("%s/tree/master/{/dir}", homeURL)
+			fileURL := fmt.Sprintf("%s/blob/master{/dir}/{file}#L{line}", homeURL)
+			repo := repository{
+				Prefix:  r.GetPrefix(*ghrepo.Name),
+				URL:     homeURL,
+				Website: website{URL: homeURL},
+				SourceURLs: sourceURLs{
+					Home: homeURL,
+					Dir:  dirURL,
+					File: fileURL,
+				},
+			}
+			repos.append(repo)
 		}
-		homeURL := *ghrepo.HTMLURL
-		dirURL := fmt.Sprintf("%s/tree/master/{/dir}", homeURL)
-		fileURL := fmt.Sprintf("%s/blob/master{/dir}/{file}#L{line}", homeURL)
-		repo := repository{
-			Prefix:  r.GetPrefix(*ghrepo.Name),
-			URL:     homeURL,
-			Website: website{URL: homeURL},
-			SourceURLs: sourceURLs{
-				Home: homeURL,
-				Dir:  dirURL,
-				File: fileURL,
-			},
+		if resp.LastPage == opts.Page {
+			break
 		}
-		repos.append(repo)
+		opts.Page = resp.NextPage
 	}
 	return nil
 }
